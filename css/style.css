@@ -9,7 +9,23 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 /* 100svh = the small (toolbars shown) viewport, so Safari's collapsing bars never resize the layout. */
 body { display: flex; flex-direction: column; height: 100vh; height: 100svh; max-width: 480px; margin: 0 auto; padding-top: var(--sat); overflow: hidden; }
 @media (display-mode: standalone) { body { height: 100dvh; } }
-@media (min-width: 700px) { body { border-left: 1px solid var(--line); border-right: 1px solid var(--line); } }
+@media (min-width: 700px) and (max-width: 979px) { body { border-left: 1px solid var(--line); border-right: 1px solid var(--line); } }
+
+/* Desktop / tablet landscape: two columns — reading panels left, full-height CPR right. */
+@media (min-width: 980px) {
+  body { max-width: 1280px; height: 100vh; display: grid; grid-template-columns: 460px minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr); column-gap: 14px; padding: 0 16px 10px; }
+  .top { grid-column: 1 / 3; grid-row: 1; margin: 0 -16px; padding-left: 16px; padding-right: 16px; }
+  .vessels { grid-column: 1 / 3; grid-row: 2; padding-left: 0; padding-right: 0; }
+  .toprow { grid-column: 1; grid-row: 3; padding: 0 0 8px; gap: 10px; }
+  .treebox, .treebox canvas, .treelabels { width: 210px; } .treebox canvas, .treelabels { height: 240px; }
+  .cspair, .csone canvas { height: 240px; }
+  .cprbar { grid-column: 2; grid-row: 3; align-self: start; padding: 0 0 6px; }
+  .cprs { grid-column: 2; grid-row: 4; margin: 0; }
+  .sheet { grid-column: 1; grid-row: 4; max-height: none; margin-top: 0; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; align-self: start; }
+  .fbsheet.open { max-height: none; }
+  .segc button { min-height: 32px; font-size: 12.5px; } .lab { width: 70px; font-size: 11px; }
+  .cprs canvas { cursor: grab; }
+}
 
 button { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 9px; padding: 6px 10px; font: inherit; cursor: pointer; min-height: 34px; }
 button.primary { background: var(--accent); border-color: var(--accent); color: #041222; font-weight: 600; }
