@@ -220,6 +220,80 @@ const Render = (() => {
     return { scale, fov };
   }
 
+  // --- Real vessels: workstation-style curved / straightened MPR ---------------
+  // Uses per-angle reformats sampled perpendicular to the viewing direction (wideData).
+  // Returns geometry { xs, ys, k } = screen position of each centreline sample (for overlays).
+  function stripFor(v, a, wl, overlay) {
+    const W = v.wideData;
+    const key = `${a}|${wl.width}|${wl.level}|${overlay}`;
+    if (v._strip && v._strip.key === key) return v._strip.canvas;
+    const { nt, nS } = W;
+    const c = document.createElement('canvas'); c.width = nt; c.height = nS;
+    const ctx = c.getContext('2d'); const img = ctx.createImageData(nt, nS); const d = img.data;
+    const lo = wl.level - wl.width / 2, kk = 255 / wl.width;
+    const base = a * nS * nt;
+    for (let i = 0; i < nS * nt; i++) {
+      const hu = W.wide[base + i] * W.scale + W.lo;
+      let g = (hu - lo) * kk; g = g < 0 ? 0 : g > 255 ? 255 : g;
+      let r = g, gg = g, b = g;
+      if (overlay && W.wlbl) { const col = OVERLAY[W.wlbl[base + i]]; if (col) { r = g * 0.5 + col[0] * 0.5; gg = g * 0.5 + col[1] * 0.5; b = g * 0.5 + col[2] * 0.5; } }
+      const o = i * 4; d[o] = r; d[o + 1] = gg; d[o + 2] = b; d[o + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    v._strip = { key, canvas: c };
+    return c;
+  }
+
+  function realCPR(v, canvas, state, mode) {
+    const W = v.wideData, { nS, nt, pitch, step, na } = W;
+    const w = canvas.width, h = canvas.height;
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = '#000'; ctx.fillRect(0, 0, w, h);
+    let a = Math.round(state.phi / (2 * Math.PI) * na); a = ((a % na) + na) % na;
+    const strip = stripFor(v, a, state.wl, state.overlay);
+    const xs = new Float32Array(nS), ys = new Float32Array(nS);
+    const pad = 6;
+    if (mode === 'straight') {
+      const k = (h - 2 * pad) / (nS * step);            // px per mm, vessel length fits the canvas
+      const wpx = nt * pitch * k;
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(strip, 0, 0, nt, nS, w / 2 - wpx / 2, pad, wpx, h - 2 * pad);
+      for (let i = 0; i < nS; i++) { xs[i] = w / 2; ys[i] = pad + (i + 0.5) * step * k; }
+      return { xs, ys, k };
+    }
+    // Stretched (workstation convention): vertical axis = true arc length (no foreshortening,
+    // constant true vessel width), horizontal = the centreline's projected lateral position for
+    // this viewing angle; each row is that point's lateral sampling line (perpendicular to the
+    // view ray), so the surrounding anatomy is a coherent slab.
+    const P = W.proj, o = a * nS * 4;
+    const k = (h - 2 * pad) / (nS * step);                 // px per mm (isotropic)
+    let pxSum = 0; for (let i = 0; i < nS; i++) pxSum += P[o + i * 4];
+    const pxMean = pxSum / nS;
+    for (let i = 0; i < nS; i++) { xs[i] = w / 2 + (P[o + i * 4] - pxMean) * k; ys[i] = pad + (i + 0.5) * step * k; }
+    const st = state.stride || 1;
+    const half = (nt - 1) / 2;
+    const lo = state.wl.level - state.wl.width / 2, kk = 255 / state.wl.width, base = a * nS * nt;
+    const img = ctx.createImageData(w, h), d = img.data;
+    for (let y = 0; y < h; y += st) {
+      const i = Math.max(0, Math.min(nS - 1, Math.floor((y - pad) / (step * k))));
+      const xc = xs[i], rowBase = base + i * nt;
+      for (let x = 0; x < w; x += st) {
+        const tf = (x - xc) / k / pitch + half;             // lateral sample index (fractional)
+        let r = 0, g = 0, b = 0;
+        if (tf >= 0 && tf <= nt - 1) {
+          const t0 = Math.floor(tf), t1 = Math.min(nt - 1, t0 + 1), f = tf - t0;
+          const hu = (W.wide[rowBase + t0] * (1 - f) + W.wide[rowBase + t1] * f) * W.scale + W.lo;
+          let gg = (hu - lo) * kk; gg = gg < 0 ? 0 : gg > 255 ? 255 : gg;
+          r = g = b = gg;
+          if (state.overlay && W.wlbl) { const col = OVERLAY[W.wlbl[rowBase + Math.round(tf)]]; if (col) { r = gg * 0.5 + col[0] * 0.5; g = gg * 0.5 + col[1] * 0.5; b = gg * 0.5 + col[2] * 0.5; } }
+        }
+        for (let dy = 0; dy < st && y + dy < h; dy++) for (let dx = 0; dx < st && x + dx < w; dx++) { const p = ((y + dy) * w + x + dx) * 4; d[p] = r; d[p + 1] = g; d[p + 2] = b; d[p + 3] = 255; }
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    return { xs, ys, k };
+  }
+
   // --- Lumen profile chart (feedback) ---------------------------------------
   function lumenProfile(v, canvas, truth) {
     const ctx = canvas.getContext('2d');
@@ -253,5 +327,5 @@ const Render = (() => {
     ctx.fillStyle = '#ff5050'; ctx.fillText('minimal lumen diameter', w - 105, pad.t - 3);
   }
 
-  return { straightCPR, stretchedCPR, crossSection, lumenProfile, OVERLAY };
+  return { straightCPR, stretchedCPR, crossSection, lumenProfile, realCPR, OVERLAY };
 })();

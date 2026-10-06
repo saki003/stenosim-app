@@ -32,12 +32,21 @@ const Real = (() => {
       v.loaded = false;
       let loading = null;
       v.load = () => loading || (loading = (async () => {
-        const [hb, lb, wb] = await Promise.all([
+        const opt = p => fetch(p).then(r => r.ok ? r.arrayBuffer() : null).catch(() => null);
+        const hasProj = m.wide && m.wide.proj;
+        const [hb, lb, wb, pb, wlb] = await Promise.all([
           m.hu8 ? fetch(`${dir}/${key}.hu8.bin`).then(r => r.arrayBuffer()) : fetch(`${dir}/${key}.hu.bin`).then(r => r.arrayBuffer()),
           fetch(`${dir}/${key}.lbl.bin`).then(r => r.arrayBuffer()),
-          m.wide ? fetch(`${dir}/${key}.wide.bin`).then(r => r.ok ? r.arrayBuffer() : null).catch(() => null) : Promise.resolve(null),
+          m.wide ? opt(`${dir}/${key}.wide.bin`) : Promise.resolve(null),
+          hasProj ? opt(`${dir}/${key}.proj.bin`) : Promise.resolve(null),
+          hasProj ? opt(`${dir}/${key}.wlbl.bin`) : Promise.resolve(null),
         ]);
         v.attach(m.hu8 ? new Uint8Array(hb) : new Int16Array(hb), new Uint8Array(lb), wb ? new Uint8Array(wb) : null);
+        if (wb && pb) {
+          // Workstation-style curved MPR data (see export_case.sample_wide).
+          v.wideData = { wide: new Uint8Array(wb), proj: new Float32Array(pb), wlbl: wlb ? new Uint8Array(wlb) : null,
+                         na: m.wide.na, nt: m.wide.nt, pitch: m.wide.pitch, lo: m.wide.lo, scale: m.wide.scale, nS: m.nS, step: m.step };
+        }
         v.loaded = true;
       })());
       vessels[key] = v;

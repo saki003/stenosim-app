@@ -25,7 +25,7 @@
   }
   const state = {
     caseIdx: 0, vessel: 'LAD', seg: 0, phi: 0, sPos: 10, wl: { width: 900, level: 250 }, overlay: false, stride: 1,
-    view: { az: 0, el: 0.05 }, cprMode: 'stretched', zoom: 1, collapsed: false, sRef: null,   // head-on anterior view
+    view: { az: 0, el: 0.05 }, cprMode: 'stretched', zoom: 1, collapsed: false, sRef: null, geom: {},   // head-on anterior view
   };
 
   const tree = () => trees[state.caseIdx];
@@ -120,10 +120,16 @@
     const base = `${state.caseIdx}|${state.vessel}|${state.phi}|${state.wl.width}|${state.wl.level}|${state.overlay}|${state.stride}|${state.cprMode}|${g.H}`;
     if (base !== cprKey) {
       cprKey = base;
-      if (off.width !== g.H || off.height !== g.W) { off.width = g.H; off.height = g.W; }
-      if (cv.cpr.height !== g.H) { cv.cpr.width = cv.over.width = g.W; cv.cpr.height = cv.over.height = g.H; }
-      (state.cprMode === 'stretched' ? Render.stretchedCPR : Render.straightCPR)(v, off, state);
-      blitVertical(off, cv.cpr);
+      if (cv.cpr.height !== g.H || cv.cpr.width !== g.W) { cv.cpr.width = cv.over.width = g.W; cv.cpr.height = cv.over.height = g.H; }
+      if (v.isReal && v.wideData) {
+        // real case: workstation-style curved / straightened MPR drawn directly (no rotation blit)
+        state.geom.cpr = Render.realCPR(v, cv.cpr, state, state.cprMode);
+      } else {
+        state.geom.cpr = null;
+        if (off.width !== g.H || off.height !== g.W) { off.width = g.H; off.height = g.W; }
+        (state.cprMode === 'stretched' ? Render.stretchedCPR : Render.straightCPR)(v, off, state);
+        blitVertical(off, cv.cpr);
+      }
     }
     const ck = base + '|' + state.sPos.toFixed(2) + '|' + state.sRef;
     if (ck !== csKey) {
@@ -160,31 +166,62 @@
     const pxPerMm = w / 9;
     ctx.fillStyle = '#ddd'; ctx.fillRect(8, h - 10, pxPerMm, 2); ctx.font = '10px system-ui'; ctx.fillText('1 mm', 8, h - 14);
   }
+  // Screen position of arc-length s on the CPR canvas (uses real-case geometry when present).
+  function posOf(s) {
+    const v = vessel(), g = state.geom.cpr;
+    if (g) { const i = Math.max(0, Math.min(g.ys.length - 1, Math.round(s / v.cl.step))); return { x: g.xs[i], y: g.ys[i] }; }
+    return { x: cv.over.width / 2, y: s / v.length * cv.over.height };
+  }
+  function sAtCanvas(x, y) {
+    const v = vessel(), g = state.geom.cpr;
+    if (!g) return y / cv.over.height * v.length;
+    let best = 0, bd = Infinity;
+    for (let i = 0; i < g.ys.length; i++) { const d = (g.ys[i] - y) ** 2 + 0.15 * (g.xs[i] - x) ** 2; if (d < bd) { bd = d; best = i; } }
+    return best * v.cl.step;
+  }
   function drawOverlay() {
     const v = vessel(); const ctx = cv.over.getContext('2d'); const w = cv.over.width, h = cv.over.height;
     ctx.clearRect(0, 0, w, h);
-    const Y = s => s / v.length * h;
+    const Y = s => posOf(s).y, X = s => posOf(s).x;
     const r = rec();
     const small = state.zoom < 1.8;
     ctx.font = `bold ${small ? 9 : 10}px system-ui`;
+    const curved = !!state.geom.cpr && state.cprMode === 'stretched';
+    // Marker helper: full-width line for straight views, a short tick across the vessel for curved ones.
+    const mark = (s, style, dash, width) => {
+      ctx.strokeStyle = style; ctx.lineWidth = width || 1; ctx.setLineDash(dash || []); ctx.beginPath();
+      if (curved) { const p = posOf(s); ctx.moveTo(p.x - 28, p.y); ctx.lineTo(p.x + 28, p.y); }
+      else { ctx.moveTo(0, Y(s)); ctx.lineTo(w, Y(s)); }
+      ctx.stroke(); ctx.setLineDash([]);
+    };
     v.segments.forEach((g, i) => {
-      if (i === state.seg && !r.submitted) { ctx.fillStyle = 'rgba(59,158,255,0.9)'; ctx.fillRect(0, Y(g.s0), 3, Y(g.s1) - Y(g.s0)); }
-      ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(0, Y(g.s1)); ctx.lineTo(w, Y(g.s1)); ctx.stroke(); ctx.setLineDash([]);
+      if (i === state.seg && !r.submitted) {
+        ctx.strokeStyle = 'rgba(59,158,255,0.9)'; ctx.lineWidth = 3; ctx.beginPath();
+        if (curved) { for (let s = g.s0; s <= g.s1; s += v.cl.step * 4) { const p = posOf(s); s === g.s0 ? ctx.moveTo(p.x - 34, p.y) : ctx.lineTo(p.x - 34, p.y); } }
+        else { ctx.moveTo(1.5, Y(g.s0)); ctx.lineTo(1.5, Y(g.s1)); }
+        ctx.stroke(); ctx.lineWidth = 1;
+      }
+      mark(g.s1, 'rgba(255,255,255,0.35)', [3, 3]);
       ctx.fillStyle = i === state.seg ? '#3b9eff' : 'rgba(255,255,255,0.6)';
-      ctx.fillText(g.name.toUpperCase().slice(0, small ? 4 : 8), 5, Y(g.s0) + 10);
+      const lx = curved ? Math.max(4, X(g.s0 + 2) - 70) : 5;
+      ctx.fillText(g.name.toUpperCase().slice(0, small ? 4 : 8), lx, Y(g.s0 + 2) + 10);
       const sr = r.segs[i];
-      if (sr && sr.cat !== '0' && !r.submitted) { ctx.fillStyle = '#7CFC9A'; ctx.fillText(`${Scoring.CAT_LABEL[sr.cat]}% ${sr.comp.slice(0, 5)}`, 5, Y(g.s0) + 20); }
+      if (sr && sr.cat !== '0' && !r.submitted) { ctx.fillStyle = '#7CFC9A'; ctx.fillText(`${Scoring.CAT_LABEL[sr.cat]}% ${sr.comp.slice(0, 5)}`, lx, Y(g.s0 + 2) + 20); }
     });
     if (r.submitted) for (const L of v.truth.lesions) {
-      ctx.strokeStyle = 'rgba(255,214,0,0.9)'; ctx.setLineDash([4, 3]); ctx.strokeRect(1.5, Y(L.sStart), w - 3, Y(L.sEnd) - Y(L.sStart)); ctx.setLineDash([]);
-      ctx.fillStyle = '#ffd600'; ctx.fillText(`${Math.round(L.diamStenosis * 100)}% ${L.composition.slice(0, 5)}`, w - 70, Y(L.sStart) - 2);
+      ctx.strokeStyle = 'rgba(255,214,0,0.9)'; ctx.setLineDash([4, 3]); ctx.lineWidth = 1.5; ctx.beginPath();
+      if (curved) { for (let s = L.sStart; s <= L.sEnd; s += v.cl.step * 2) { const p = posOf(s); s === L.sStart ? ctx.moveTo(p.x + 30, p.y) : ctx.lineTo(p.x + 30, p.y); } }
+      else ctx.rect(1.5, Y(L.sStart), w - 3, Y(L.sEnd) - Y(L.sStart));
+      ctx.stroke(); ctx.setLineDash([]); ctx.lineWidth = 1;
+      ctx.fillStyle = '#ffd600'; ctx.fillText(`${Math.round(L.diamStenosis * 100)}% ${L.composition.slice(0, 5)}`, curved ? X(L.sStart) + 34 : w - 70, Y(L.sStart) - 2);
     }
     if (state.sRef != null) {
-      ctx.strokeStyle = 'rgba(124,252,154,0.95)'; ctx.lineWidth = 1.5; ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.moveTo(0, Y(state.sRef)); ctx.lineTo(w, Y(state.sRef)); ctx.stroke(); ctx.setLineDash([]);
-      ctx.fillStyle = 'rgba(124,252,154,0.95)'; ctx.fillText('REF', w - 24, Y(state.sRef) - 3);
+      mark(state.sRef, 'rgba(124,252,154,0.95)', [5, 4], 1.5);
+      ctx.fillStyle = 'rgba(124,252,154,0.95)'; ctx.fillText('REF', (curved ? X(state.sRef) + 32 : w - 24), Y(state.sRef) - 3);
     }
-    ctx.strokeStyle = 'rgba(59,158,255,0.95)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(0, Y(state.sPos)); ctx.lineTo(w, Y(state.sPos)); ctx.stroke();
-    ctx.fillStyle = 'rgba(59,158,255,0.95)'; ctx.beginPath(); ctx.moveTo(0, Y(state.sPos) - 5); ctx.lineTo(0, Y(state.sPos) + 5); ctx.lineTo(6, Y(state.sPos)); ctx.fill();
+    mark(state.sPos, 'rgba(59,158,255,0.95)', [], 1.5);
+    const cp = posOf(state.sPos), ax = curved ? cp.x - 34 : 0;
+    ctx.fillStyle = 'rgba(59,158,255,0.95)'; ctx.beginPath(); ctx.moveTo(ax, cp.y - 5); ctx.lineTo(ax, cp.y + 5); ctx.lineTo(ax + 6, cp.y); ctx.fill();
   }
 
   // --- View mode & zoom ---------------------------------------------------------
@@ -201,7 +238,7 @@
     // After the canvas resizes, scroll so anchorS sits at anchorClientY.
     setTimeout(() => {
       const rect = cv.cpr.getBoundingClientRect(); const boxRect = box.getBoundingClientRect();
-      const yInCanvas = anchorS / vessel().length * rect.height;
+      const yInCanvas = posOf(anchorS).y / cv.cpr.height * rect.height;
       box.scrollTop = Math.max(0, yInCanvas - (anchorClientY - boxRect.top));
     }, 10);
   }
@@ -229,7 +266,11 @@
   // --- Gestures ---------------------------------------------------------------
   function setS(s) { state.sPos = Math.max(0, Math.min(vessel().length, s)); }
   function selectSegmentAt(s) { const i = vessel().segments.findIndex(g => s >= g.s0 && s < g.s1); if (i >= 0 && i !== state.seg) { state.seg = i; renderWorksheet(); } }
-  const sAtClientY = y => { const rect = cv.cpr.getBoundingClientRect(); return (y - rect.top) / rect.height * vessel().length; };
+  const sAtClientY = (y, x) => {
+    const rect = cv.cpr.getBoundingClientRect();
+    const cx = x == null ? cv.cpr.width / 2 : (x - rect.left) / rect.width * cv.cpr.width;
+    return sAtCanvas(cx, (y - rect.top) / rect.height * cv.cpr.height);
+  };
 
   (() => {
     const canvas = cv.cpr;
@@ -264,7 +305,7 @@
       ptrs.delete(e.pointerId);
       if (wasTap) {
         const now = Date.now();
-        const s = sAtClientY(e.clientY);
+        const s = sAtClientY(e.clientY, e.clientX);
         if (now - lastTap < 300) { setZoom(state.zoom > 1.01 ? 1 : widthZoom(), s, e.clientY); lastTap = 0; }
         else { setS(s); selectSegmentAt(s); lastTap = now; }
       }
@@ -300,7 +341,7 @@
     cv.tree.addEventListener('pointerdown', () => { const now = Date.now(); if (now - lastTreeTap < 300) { state.view.az = 0; state.view.el = 0.05; requestRender(); } lastTreeTap = now; });
   })();
   function scrollCprToCursor() {
-    const box = $('cprs'); const y = state.sPos / vessel().length * cv.cpr.getBoundingClientRect().height;
+    const box = $('cprs'); const y = posOf(state.sPos).y / cv.cpr.height * cv.cpr.getBoundingClientRect().height;
     const top = box.scrollTop, hh = box.clientHeight;
     if (y < top + 30 || y > top + hh - 30) box.scrollTo({ top: Math.max(0, y - hh / 2), behavior: 'smooth' });
   }
