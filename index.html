@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="StenoSim">
+<meta name="theme-color" content="#0f1216">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>StenoSim</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="top">
+  <button id="prevCase" class="nav" aria-label="Previous case">‹</button>
+  <div class="casettl"><b id="caseLbl">Case 1 / 10</b><small id="caseSub">medium · 0 of 5 vessels read</small></div>
+  <button id="nextCase" class="nav" aria-label="Next case">›</button>
+  <button id="menuBtn" class="nav" aria-label="Menu">⋯</button>
+</header>
+
+<div class="vessels" id="vessels"></div>
+
+<div class="toprow">
+  <div class="treebox">
+    <canvas id="tree" width="150" height="150"></canvas>
+    <div id="treeLabels" class="treelabels"></div>
+  </div>
+  <div class="csbox">
+    <div class="cspair">
+      <div class="csone" id="refBox" hidden><canvas id="crossRef" width="240" height="240"></canvas><span class="tag ref" id="refLbl">REF</span></div>
+      <div class="csone"><canvas id="cross" width="240" height="240"></canvas><span class="tag" id="curLbl">CURRENT</span></div>
+    </div>
+    <div class="csinfo"><span id="csPos">s = 0 mm</span><span id="angleLbl">0°</span><button id="traceBtn" class="tiny" hidden>Trace</button><button id="setRef" class="tiny">Set ref</button></div>
+  </div>
+</div>
+
+<div class="cprbar">
+  <div class="seg2">
+    <button id="viewStretched" class="on">Stretched</button>
+    <button id="viewStraight">Straight</button>
+  </div>
+  <span class="hint" id="zoomLbl">fit</span>
+  <div class="zoom">
+    <button id="zoomOut" aria-label="Zoom out">−</button>
+    <button id="zoomFit">Fit</button>
+    <button id="zoomIn" aria-label="Zoom in">+</button>
+  </div>
+</div>
+<div class="cprs" id="cprs">
+  <div class="wrap">
+    <canvas id="cpr" width="200" height="400"></canvas>
+    <canvas id="cprOverlay" width="200" height="400" class="over"></canvas>
+  </div>
+</div>
+
+<section class="sheet ws" id="worksheet">
+  <div class="row"><span class="lab">Segment</span><div class="segc" id="segtabs"></div></div>
+  <div class="row"><span class="lab">Stenosis</span><div class="segc" id="catBtns"></div><span class="unit">%</span></div>
+  <div class="row"><span class="lab">Plaque</span><div class="segc" id="compBtns"></div></div>
+  <div class="row"><span class="lab">High-risk</span><div class="segc multi" id="hrpBtns"></div></div>
+  <button id="finishCase" class="primary submitbar">Finish case</button>
+</section>
+
+<section class="sheet fbsheet" id="feedback" hidden>
+  <div class="fbhead">
+    <div class="score" id="scoreBig"></div>
+    <div id="vesselVerdict" class="verdict"></div>
+    <div class="fbbtns">
+      <button id="toggleOverlay" class="small">Overlay</button>
+      <button id="fbDetails" class="small">Details ▾</button>
+      <button id="nextVessel" class="small primary">Next ›</button>
+    </div>
+  </div>
+  <div class="segchips" id="segChips"></div>
+  <div id="fbMore" hidden>
+    <div class="legend">
+      <span><i style="background:#ff3c3c"></i>Lumen</span><span><i style="background:#ffd600"></i>Non-calc</span>
+      <span><i style="background:#ff7800"></i>Low-atten</span><span><i style="background:#78dcff"></i>Calcified</span>
+    </div>
+    <div id="segFeedback"></div>
+    <canvas id="profile" width="400" height="120"></canvas>
+  </div>
+</section>
+
+<section id="traceView" class="traceview" hidden>
+  <div class="tracehead">
+    <b>Trace a vessel</b>
+    <span class="hint" id="traceHint">Tap along the vessel on the 3‑D tree, proximal → distal. Drag to rotate.</span>
+  </div>
+  <canvas id="traceCanvas"></canvas>
+  <div class="tracebar">
+    <select id="traceName">
+      <option>D1</option><option>D2</option><option>OM1</option><option>OM2</option><option>RI</option>
+      <option>PDA</option><option>PLV</option><option>LM</option><option>LAD</option><option>LCX</option><option>RCA</option><option>AM</option>
+    </select>
+    <button id="traceUndo" class="small">Undo</button>
+    <button id="traceClear" class="small">Clear</button>
+    <button id="traceCancel" class="small">Cancel</button>
+    <button id="traceConfirm" class="small primary" disabled>Confirm</button>
+  </div>
+  <div class="tracestatus" id="traceStatus"></div>
+</section>
+
+<dialog id="menu">
+  <h3>StenoSim</h3>
+  <div class="kpis" id="kpis"></div>
+  <div class="grp"><span>Case set</span>
+    <label>Cases <input type="number" id="nCases" min="1" max="50" value="10"></label>
+    <label>Difficulty <select id="difficulty"><option value="easy">Easy</option><option value="medium">Medium</option><option value="hard">Hard</option></select></label>
+  </div>
+  <div class="grp"><span>Window</span>
+    <label>W <input type="range" id="ww" min="200" max="2000" value="900"></label>
+    <label>L <input type="range" id="wlv" min="-200" max="800" value="250"></label>
+    <button id="wlCoronary" class="small">Coronary</button><button id="wlCalc" class="small">Calcium</button>
+  </div>
+  <div class="actions wrapb">
+    <button id="newSet">New case set</button>
+    <button id="exportCsv">Export CSV</button>
+    <button id="resetReads" class="danger">Reset answers</button>
+    <button id="closeMenu" class="primary">Close</button>
+  </div>
+  <p class="tip">Install: Share → “Add to Home Screen”. Gestures: drag sideways on the CPR or cross-section to rotate the vessel; pinch or use −/+ to zoom the CPR, double-tap to zoom in/out; drag up/down on the cross-section to move along the vessel; tap the CPR to pick a segment.</p>
+</dialog>
+
+<script src="js/rng.js"></script>
+<script src="js/vessel.js"></script>
+<script src="js/vendor/three.min.js"></script>
+<script src="js/tree.js"></script>
+<script src="js/tree3d.js"></script>
+<script src="js/render.js"></script>
+<script src="js/scoring.js"></script>
+<script src="js/real.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
