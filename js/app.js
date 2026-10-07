@@ -186,7 +186,7 @@
     const r = rec();
     const small = state.zoom < 1.8;
     ctx.font = `bold ${small ? 9 : 10}px system-ui`;
-    const curved = !!state.geom.cpr && state.cprMode === 'stretched';
+    const curved = false;   // vertical axis is arc length in every view now, so bands/lines are horizontal
     // Marker helper: full-width line for straight views, a short tick across the vessel for curved ones.
     const mark = (s, style, dash, width) => {
       ctx.strokeStyle = style; ctx.lineWidth = width || 1; ctx.setLineDash(dash || []); ctx.beginPath();

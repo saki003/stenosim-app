@@ -90,8 +90,8 @@ const Tree = (() => {
     const pad = Math.max(10, aorta.r * 0.6);
     const sc = Math.min((w - 2 * pad) / (maxx - minx + aorta.r), (h - 2 * pad) / (maxy - miny + aorta.r));
     const ox = (w - (maxx - minx) * sc) / 2, oy = (h - (maxy - miny) * sc) / 2;
-    // Mirrored horizontally (patient's left shown on the right).
-    const X = q => w - ox - (q[0] - minx) * sc, Y = q => h - oy - (q[1] - miny) * sc;
+    // Anterior view: patient's left on the viewer's right.
+    const X = q => ox + (q[0] - minx) * sc, Y = q => h - oy - (q[1] - miny) * sc;
     const shade = d => 0.45 + 0.55 * (d - mind) / Math.max(1e-6, maxd - mind); // nearer = brighter
 
     // Heart silhouette (shaded ellipsoid behind everything), centred on the vessel cloud.

@@ -24,9 +24,9 @@ const Tree3D = (() => {
     } catch (e) { ok = false; }
   }
 
-  // locator frame (x patient-left, y anterior, z superior) -> three (x right, y up, z toward viewer);
-  // x is mirrored so the patient's right appears on the viewer's right (as requested).
-  const v3 = p => new THREE.Vector3(-p[0], p[2], p[1]);
+  // locator frame (x patient-left, y anterior, z superior) -> three (x right, y up, z toward viewer).
+  // Anterior view convention: the patient's left is on the viewer's right (RCA on the left).
+  const v3 = p => new THREE.Vector3(p[0], p[2], p[1]);
 
   // Tapered tube: a chain of TubeGeometry pieces with decreasing radius.
   function taperedTube(pts, radiusAt, material, pieces = 10) {
@@ -64,7 +64,7 @@ const Tree3D = (() => {
 
   function build(tree, current) {
     while (group.children.length) group.remove(group.children[0]);
-    pickMesh = null; traceGroup = null;
+    pickMesh = null; traceGroup = null; lineGroup = null;
     // Vessel cloud centre and extent.
     let cen = [0, 0, 0], n = 0, lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9];
     for (const k of tree.order) for (const p of tree.vessels[k].cl.P) { n++; for (let d = 0; d < 3; d++) { cen[d] += p[d]; lo[d] = Math.min(lo[d], p[d]); hi[d] = Math.max(hi[d], p[d]); } }
@@ -101,7 +101,7 @@ const Tree3D = (() => {
     const toGeo = m => {
       const g = new THREE.BufferGeometry();
       const pos = new Float32Array(m.verts.length);
-      for (let i = 0; i < m.verts.length; i += 3) { pos[i] = -m.verts[i]; pos[i + 1] = m.verts[i + 2]; pos[i + 2] = m.verts[i + 1]; } // same mapping as v3
+      for (let i = 0; i < m.verts.length; i += 3) { pos[i] = m.verts[i]; pos[i + 1] = m.verts[i + 2]; pos[i + 2] = m.verts[i + 1]; } // same mapping as v3
       g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
       g.setIndex(new THREE.BufferAttribute(m.faces, 1));
       g.computeVertexNormals();
@@ -152,7 +152,7 @@ const Tree3D = (() => {
     const hits = rc.intersectObject(pickMesh, false);
     if (!hits.length) return null;
     const q = hits[0].point;
-    return [-q.x, q.z, q.y];
+    return [q.x, q.z, q.y];
   }
   function setTracePoints(pts) {
     if (!group) return;
@@ -167,6 +167,25 @@ const Tree3D = (() => {
     group.add(traceGroup);
   }
   function release() { if (renderer) { renderer.dispose(); renderer = null; built = null; } }
+  // Screen position (canvas px) of a locator-frame point, or null before the first draw.
+  function project(canvas, p) {
+    if (!camera) return null;
+    const w = canvas.clientWidth || canvas.width, h = canvas.clientHeight || canvas.height;
+    const q = v3(p).project(camera);
+    return { x: (q.x + 1) / 2 * w, y: (1 - q.y) / 2 * h, z: q.z };
+  }
+  // Highlight an existing centreline (array of locator-frame points) while editing.
+  let lineGroup = null;
+  function setHighlightLine(pts, color = 0xffd600) {
+    if (!group) return;
+    if (lineGroup) group.remove(lineGroup);
+    lineGroup = null;
+    if (pts && pts.length > 1) {
+      const g = new THREE.BufferGeometry().setFromPoints(pts.map(v3));
+      lineGroup = new THREE.Line(g, new THREE.LineBasicMaterial({ color }));
+      group.add(lineGroup);
+    }
+  }
 
   function draw(canvas, tree, view) {
     if (!ok) return false;
@@ -212,5 +231,5 @@ const Tree3D = (() => {
     return true;
   }
 
-  return { draw, pick, setTracePoints, release, available: () => ok, canTrace: () => !!pickMesh };
+  return { draw, pick, project, setTracePoints, setHighlightLine, release, available: () => ok, canTrace: () => !!pickMesh };
 })();

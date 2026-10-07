@@ -76,7 +76,7 @@ const Real = (() => {
       }));
       meshes = meshes.filter(Boolean);
     }
-    const tree = { id, seed: 0, difficulty: meta.difficulty || 'medium', vessels, order: meta.order, real: true, aorta, meshes };
+    const tree = { id, seed: 0, difficulty: meta.difficulty || 'medium', vessels, order: meta.order, real: true, aorta, meshes, curated: meta.curated || {} };
     cache[id] = tree;
     return tree;
   }
